@@ -34,9 +34,11 @@ def render_text(r: DiffResult, old_label: str, new_label: str) -> str:
             )
         lines.append("")
     if r.renamed:
-        lines.append("POSSIBLE RENAMES (same unique value)")
+        lines.append("POSSIBLE RENAMES (same unique value, ranked by name similarity)")
         for rn in r.renamed:
-            lines.append(f"  {rn.old_key} -> {rn.new_key}  ({_hex(rn.value)})")
+            lines.append(
+                f"  {rn.old_key} -> {rn.new_key}  ({_hex(rn.value)}, name {rn.similarity:.0%})"
+            )
         lines.append("")
     renamed_old = {rn.old_key for rn in r.renamed}
     renamed_new = {rn.new_key for rn in r.renamed}
@@ -64,7 +66,10 @@ def render_markdown(r: DiffResult, old_label: str, new_label: str) -> str:
         out.append("")
     if r.renamed:
         out += ["## Possible renames", ""]
-        out += [f"- `{rn.old_key}` -> `{rn.new_key}` (`{_hex(rn.value)}`)" for rn in r.renamed]
+        out += [
+            f"- `{rn.old_key}` -> `{rn.new_key}` (`{_hex(rn.value)}`, name {rn.similarity:.0%})"
+            for rn in r.renamed
+        ]
         out.append("")
     if r.added:
         out += ["## Added", ""] + [f"- `{k}` = `{_hex(v)}`" for k, v in r.added.items()] + [""]
@@ -83,7 +88,13 @@ def render_json(r: DiffResult, old_label: str, new_label: str) -> str:
         "added": r.added,
         "removed": r.removed,
         "renamed": [
-            {"old": rn.old_key, "new": rn.new_key, "value": rn.value} for rn in r.renamed
+            {
+                "old": rn.old_key,
+                "new": rn.new_key,
+                "value": rn.value,
+                "similarity": round(rn.similarity, 3),
+            }
+            for rn in r.renamed
         ],
         "unchanged": r.unchanged,
     }

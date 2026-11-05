@@ -50,7 +50,8 @@ python -m unittest discover -s tests
 - [ ] schema-aware mode: group class fields under their class, flag struct-size shifts
 - [ ] signature-aware mode: carry a pattern next to each offset, re-scan the new binary
 - [ ] `watch` command: poll a dumper repo, diff on every new commit
-- [ ] confidence score for rename detection (name similarity + neighbour offsets)
+- [x] rename candidates ranked by name similarity
+- [ ] rename detection from neighbouring offsets (value shifted, name kept)
 - [ ] HTML report
 - [ ] Dumper-7 (`.usmap` / SDK header) and Il2CppDumper (`dump.cs`) parsers
 - [ ] PyPI release

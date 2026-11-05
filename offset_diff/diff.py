@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from fnmatch import fnmatchcase
 
 from .parse import Offsets
@@ -25,6 +26,7 @@ class Rename:
     old_key: str
     new_key: str
     value: int
+    similarity: float = 0.0  # 0..1, how alike the two leaf names are
 
 
 @dataclass
@@ -72,8 +74,15 @@ def _detect_renames(added: Offsets, removed: Offsets) -> list[Rename]:
     renames = []
     for old_key, value in removed.items():
         if value and added_counts[value] == 1 and removed_counts[value] == 1:
-            renames.append(Rename(old_key, by_value[value], value))
-    return sorted(renames, key=lambda r: r.old_key)
+            new_key = by_value[value]
+            renames.append(Rename(old_key, new_key, value, _name_similarity(old_key, new_key)))
+    # most convincing first: similar names on top, the rest alphabetical
+    return sorted(renames, key=lambda r: (-r.similarity, r.old_key))
+
+
+def _name_similarity(old_key: str, new_key: str) -> float:
+    leaf = lambda key: key.rsplit(".", 1)[-1].lower()
+    return SequenceMatcher(None, leaf(old_key), leaf(new_key)).ratio()
 
 
 def diff(old: Offsets, new: Offsets, min_delta: int = 0) -> DiffResult:

@@ -101,6 +101,22 @@ class DiffTests(unittest.TestCase):
         r = diff({"p": 0x50, "q": 0x50}, {"n": 0x50})
         self.assertEqual(r.renamed, [])
 
+    def test_rename_similarity_ranks_results(self):
+        r = diff(
+            {"m.dwEntityList": 0x10, "m.dwFoo": 0x20},
+            {"m.dwEntityListEx": 0x10, "m.zzzzzz": 0x20},
+        )
+        self.assertEqual([x.old_key for x in r.renamed], ["m.dwEntityList", "m.dwFoo"])
+        self.assertGreater(r.renamed[0].similarity, 0.8)
+        self.assertLess(r.renamed[1].similarity, 0.3)
+
+    def test_rename_similarity_in_reports(self):
+        from offset_diff.report import render_json, render_text
+
+        r = diff({"a.dwOld": 0x50}, {"a.dwOldX": 0x50})
+        self.assertIn("name 91%", render_text(r, "a", "b"))
+        self.assertEqual(json.loads(render_json(r, "a", "b"))["renamed"][0]["similarity"], 0.909)
+
     def test_zero_is_not_a_rename(self):
         self.assertEqual(diff({"a": 0}, {"b": 0}).renamed, [])
 
