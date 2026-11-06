@@ -4,6 +4,8 @@ Supported inputs:
   * JSON  - any nesting; ints and "0x..." strings are kept, the rest ignored.
   * C++ / Rust / C# source - ``constexpr``/``const`` integer declarations,
     qualified by the enclosing namespace / mod / class / struct names.
+  * Il2CppDumper ``dump.cs`` - field offsets and method RVAs (detected by its
+    ``// TypeDefIndex:`` markers, see il2cpp.py).
   * A directory of dumper output (one entry per file stem, json preferred).
 """
 
@@ -12,6 +14,9 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+
+from .il2cpp import MARKER as _IL2CPP_MARKER
+from .il2cpp import parse_il2cpp
 
 Offsets = dict[str, int]
 
@@ -79,6 +84,8 @@ def parse_text(text: str, hint: str = "") -> Offsets:
     hint = hint.lower()
     if hint == ".json" or (hint not in SOURCE_SUFFIXES and text.lstrip()[:1] in "{["):
         return parse_json(text)
+    if _IL2CPP_MARKER in text:
+        return parse_il2cpp(text)
     return parse_source(text)
 
 

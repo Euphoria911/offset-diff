@@ -54,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.output:
         Path(args.output).write_text(report, encoding="utf-8")
     else:
-        sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
         sys.stdout.write(report)
 
     return 1 if args.fail_on_change and result.has_changes else 0

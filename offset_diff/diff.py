@@ -76,7 +76,10 @@ EDGE_MIN_SIMILARITY = 0.6  # a slot at the edge of a scope has one stable neighb
 
 
 def _scope(key: str) -> str:
-    return key.rpartition(".")[0]
+    """Parent scope of a key. Method keys (``A.B.M(System.String)``) keep their parameter
+    list out of the split and get a scope of their own, apart from the class's fields."""
+    head, paren, _ = key.partition("(")
+    return head.rpartition(".")[0] + ("()" if paren else "")
 
 
 def _renames_by_value(added: Offsets, removed: Offsets) -> list[Rename]:
@@ -155,7 +158,7 @@ def _detect_renames(
 
 
 def _name_similarity(old_key: str, new_key: str) -> float:
-    leaf = lambda key: key.rsplit(".", 1)[-1].lower()
+    leaf = lambda key: key.partition("(")[0].rsplit(".", 1)[-1].lower()
     return SequenceMatcher(None, leaf(old_key), leaf(new_key)).ratio()
 
 
