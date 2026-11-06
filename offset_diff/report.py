@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from .diff import DiffResult
+from .diff import DiffResult, Rename
 
 
 def _hex(value: int) -> str:
@@ -13,6 +13,14 @@ def _hex(value: int) -> str:
 
 def _signed(value: int) -> str:
     return f"{'+' if value >= 0 else '-'}0x{abs(value):X}"
+
+
+def _rename_detail(rn: Rename) -> str:
+    if rn.reason == "position":
+        where = f"{_hex(rn.old_value)} -> {_hex(rn.new_value)}, same position"
+    else:
+        where = f"{_hex(rn.new_value)}, same value"
+    return f"{where}, name {rn.similarity:.0%}"
 
 
 def _summary(r: DiffResult) -> str:
@@ -34,11 +42,9 @@ def render_text(r: DiffResult, old_label: str, new_label: str) -> str:
             )
         lines.append("")
     if r.renamed:
-        lines.append("POSSIBLE RENAMES (same unique value, ranked by name similarity)")
+        lines.append("POSSIBLE RENAMES (ranked by name similarity)")
         for rn in r.renamed:
-            lines.append(
-                f"  {rn.old_key} -> {rn.new_key}  ({_hex(rn.value)}, name {rn.similarity:.0%})"
-            )
+            lines.append(f"  {rn.old_key} -> {rn.new_key}  ({_rename_detail(rn)})")
         lines.append("")
     renamed_old = {rn.old_key for rn in r.renamed}
     renamed_new = {rn.new_key for rn in r.renamed}
@@ -66,10 +72,7 @@ def render_markdown(r: DiffResult, old_label: str, new_label: str) -> str:
         out.append("")
     if r.renamed:
         out += ["## Possible renames", ""]
-        out += [
-            f"- `{rn.old_key}` -> `{rn.new_key}` (`{_hex(rn.value)}`, name {rn.similarity:.0%})"
-            for rn in r.renamed
-        ]
+        out += [f"- `{rn.old_key}` -> `{rn.new_key}` ({_rename_detail(rn)})" for rn in r.renamed]
         out.append("")
     if r.added:
         out += ["## Added", ""] + [f"- `{k}` = `{_hex(v)}`" for k, v in r.added.items()] + [""]
@@ -91,7 +94,10 @@ def render_json(r: DiffResult, old_label: str, new_label: str) -> str:
             {
                 "old": rn.old_key,
                 "new": rn.new_key,
-                "value": rn.value,
+                "value": rn.new_value,
+                "old_value": rn.old_value,
+                "new_value": rn.new_value,
+                "reason": rn.reason,
                 "similarity": round(rn.similarity, 3),
             }
             for rn in r.renamed

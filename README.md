@@ -39,6 +39,23 @@ CHANGED
 - `--fail-on-change`: exit code 1 if anything differs, for CI and watchers.
 - `-f md`: markdown table, paste it straight into a patch-day issue.
 
+## Rename detection
+
+A removed key and an added key are paired as a possible rename in two ways, strongest first:
+
+1. **same value**: both sides share a unique non-zero value.
+2. **same position**: the value moved, but the key sits in the same slot between neighbours
+   that exist in both dumps (same scope, same relative order). One key gone and one
+   key new in a slot is a rename. A slot at the edge of a scope also needs similar names,
+   and a scope whose neighbours were reordered is skipped.
+
+```
+C_BasePlayer.m_iOldArmor -> C_BasePlayer.m_iArmorValue  (0x3EC -> 0x3F4, same position, name 67%)
+```
+
+Candidates are ranked by leaf-name similarity. They are hints, not proof: verify before
+you trust one.
+
 ## Tests
 
 ```
@@ -51,7 +68,7 @@ python -m unittest discover -s tests
 - [ ] signature-aware mode: carry a pattern next to each offset, re-scan the new binary
 - [ ] `watch` command: poll a dumper repo, diff on every new commit
 - [x] rename candidates ranked by name similarity
-- [ ] rename detection from neighbouring offsets (value shifted, name kept)
+- [x] rename detection by position when the value shifted (same slot between stable neighbours)
 - [ ] HTML report
 - [ ] Dumper-7 (`.usmap` / SDK header) and Il2CppDumper (`dump.cs`) parsers
 - [ ] PyPI release

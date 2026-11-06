@@ -117,6 +117,40 @@ class DiffTests(unittest.TestCase):
         self.assertIn("name 91%", render_text(r, "a", "b"))
         self.assertEqual(json.loads(render_json(r, "a", "b"))["renamed"][0]["similarity"], 0.909)
 
+    def test_position_rename_when_layout_shifted(self):
+        old = {"c.m_a": 0x10, "c.m_old": 0x18, "c.m_z": 0x20}
+        new = {"c.m_a": 0x14, "c.m_new": 0x1C, "c.m_z": 0x24}
+        r = diff(old, new)
+        self.assertEqual(len(r.renamed), 1)
+        rn = r.renamed[0]
+        self.assertEqual((rn.old_key, rn.new_key, rn.reason), ("c.m_old", "c.m_new", "position"))
+        self.assertEqual((rn.old_value, rn.new_value), (0x18, 0x1C))
+        self.assertEqual({c.key for c in r.changed}, {"c.m_a", "c.m_z"})
+
+    def test_value_match_wins_over_position(self):
+        r = diff({"c.a": 1, "c.old": 5, "c.z": 9}, {"c.a": 1, "c.new": 5, "c.z": 9})
+        self.assertEqual([x.reason for x in r.renamed], ["value"])
+
+    def test_position_skipped_when_anchors_reordered(self):
+        r = diff({"c.a": 1, "c.b": 2, "c.x": 3}, {"c.b": 1, "c.a": 2, "c.y": 4})
+        self.assertEqual(r.renamed, [])
+
+    def test_position_needs_one_to_one_slot(self):
+        old = {"c.a": 1, "c.x1": 2, "c.x2": 3, "c.z": 9}
+        new = {"c.a": 1, "c.y": 7, "c.z": 9}
+        self.assertEqual(diff(old, new).renamed, [])
+
+    def test_edge_slot_needs_similar_names(self):
+        self.assertEqual(diff({"c.a": 1, "c.x": 5}, {"c.a": 1, "c.zzz": 9}).renamed, [])
+        r = diff({"c.a": 1, "c.m_health": 5}, {"c.a": 1, "c.m_healthx": 9})
+        self.assertEqual([x.reason for x in r.renamed], ["position"])
+
+    def test_scopes_are_independent(self):
+        old = {"p.a": 1, "p.old": 2, "p.z": 3, "q.a": 1, "q.z": 3}
+        new = {"p.a": 1, "p.new": 2, "p.z": 3, "q.a": 1, "q.z": 3}
+        r = diff(old, new)
+        self.assertEqual([(x.old_key, x.new_key) for x in r.renamed], [("p.old", "p.new")])
+
     def test_zero_is_not_a_rename(self):
         self.assertEqual(diff({"a": 0}, {"b": 0}).renamed, [])
 
