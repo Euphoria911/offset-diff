@@ -52,15 +52,22 @@ def _pattern(p: str) -> str:
     return p if any(c in p for c in "*?[") else f"*{p}*"
 
 
-def select(offsets: Offsets, include: list[str], exclude: list[str]) -> Offsets:
+def select(
+    offsets: Offsets, include: list[str], exclude: list[str], only: str | None = None
+) -> Offsets:
     """Keep keys matching any ``include`` glob and no ``exclude`` glob (case-insensitive).
 
-    A pattern without glob characters is treated as a substring match.
+    A pattern without glob characters is treated as a substring match. ``only`` narrows to
+    ``"methods"`` (keys with a parameter list, like ``A.B.M(int)``) or ``"fields"`` (the rest).
     """
+    if only not in (None, "fields", "methods"):
+        raise ValueError(f"only must be 'fields' or 'methods', not {only!r}")
     inc = [_pattern(p).lower() for p in include]
     exc = [_pattern(p).lower() for p in exclude]
     out: Offsets = {}
     for key, value in offsets.items():
+        if only and ("(" in key) != (only == "methods"):
+            continue
         # match the full key or any dotted tail of it, so "m_i*" hits "client.dll.m_iHealth"
         low = key.lower()
         tails = [low] + [low[i + 1:] for i, ch in enumerate(low) if ch == "."]

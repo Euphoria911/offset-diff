@@ -120,6 +120,41 @@ class DiffTests(unittest.TestCase):
         self.assertFalse(any("(" in k for k in kept))
 
 
+class OnlyTests(unittest.TestCase):
+    def test_select_only_fields_or_methods(self):
+        data = parse_il2cpp(DUMP_A)
+        fields = select(data, [], [], only="fields")
+        methods = select(data, [], [], only="methods")
+        self.assertEqual(len(fields), 5)
+        self.assertEqual(len(methods), 4)
+        self.assertEqual(fields.keys() | methods.keys(), data.keys())
+        self.assertTrue(all("(" in k for k in methods))
+        self.assertFalse(any("(" in k for k in fields))
+
+    def test_only_combines_with_include(self):
+        got = select(parse_il2cpp(DUMP_A), ["Player"], [], only="methods")
+        self.assertEqual(len(got), 3)
+
+    def test_rejects_unknown_kind(self):
+        with self.assertRaises(ValueError):
+            select({}, [], [], only="vtables")
+
+    def test_cli_only_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a.cs", Path(tmp) / "b.cs"
+            a.write_text(DUMP_A, encoding="utf-8")
+            b.write_text(DUMP_B, encoding="utf-8")
+            for kind, wanted, unwanted in (
+                ("methods", "TakeDamage", "Game.Player.health"),
+                ("fields", "Game.Player.health", "TakeDamage"),
+            ):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    self.assertEqual(main([str(a), str(b), "--only", kind]), 0)
+                self.assertIn(wanted, out.getvalue())
+                self.assertNotIn(unwanted, out.getvalue())
+
+
 class CliTests(unittest.TestCase):
     def test_cli_diff_of_two_dumps(self):
         with tempfile.TemporaryDirectory() as tmp:

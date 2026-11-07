@@ -28,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="drop keys matching PAT; repeatable",
     )
     p.add_argument(
+        "--only", choices=("fields", "methods"),
+        help="il2cpp dumps: compare only field offsets or only method RVAs",
+    )
+    p.add_argument(
         "--min-delta", type=lambda s: int(s, 0), default=0, metavar="N",
         help="ignore changes smaller than N bytes (accepts 0x..)",
     )
@@ -42,8 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        old = select(load(args.old), args.include, args.exclude)
-        new = select(load(args.new), args.include, args.exclude)
+        old = select(load(args.old), args.include, args.exclude, args.only)
+        new = select(load(args.new), args.include, args.exclude, args.only)
     except (OSError, ValueError) as exc:
         print(f"offset-diff: {exc}", file=sys.stderr)
         return 2

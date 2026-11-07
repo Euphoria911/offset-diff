@@ -46,7 +46,8 @@ Diff two `dump.cs` files to see how a game update moved class layouts and code.
 
 ```
 python -m offset_diff build_a/dump.cs build_b/dump.cs -i Player          # everything on Player types
-python -m offset_diff build_a/dump.cs build_b/dump.cs -x "*(*"           # fields only, drop method RVAs
+python -m offset_diff build_a/dump.cs build_b/dump.cs --only fields      # drop method RVAs
+python -m offset_diff build_a/dump.cs build_b/dump.cs --only methods -i Player
 ```
 
 Keys look like `Game.Player.health` (field offset) and
@@ -88,7 +89,7 @@ python -m unittest discover -s tests
 - [ ] HTML report
 - [x] Il2CppDumper `dump.cs` parser
 - [ ] Dumper-7 (`.usmap` / SDK header) parser
-- [ ] `--only fields|methods` instead of the `-x "*(*"` glob
+- [x] `--only fields|methods` for il2cpp dumps
 - [ ] PyPI release
 
 ## License
