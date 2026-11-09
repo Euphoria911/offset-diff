@@ -36,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="ignore changes smaller than N bytes (accepts 0x..)",
     )
     p.add_argument(
+        "-g", "--group", action="store_true",
+        help="add a layout-shift summary: runs of neighbouring fields that moved by the same amount",
+    )
+    p.add_argument(
         "--fail-on-change", action="store_true",
         help="exit 1 when the dumps differ (for CI / patch-day watchers)",
     )
@@ -53,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     result = diff(old, new, min_delta=args.min_delta)
-    report = RENDERERS[args.format](result, str(args.old), str(args.new))
+    report = RENDERERS[args.format](result, str(args.old), str(args.new), group=args.group)
 
     if args.output:
         Path(args.output).write_text(report, encoding="utf-8")

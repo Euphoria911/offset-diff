@@ -6,6 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from fnmatch import fnmatchcase
+from itertools import groupby
 
 from .parse import Offsets
 
@@ -35,12 +36,26 @@ class Rename:
         return self.new_value
 
 
+@dataclass(frozen=True)
+class Shift:
+    """A run of neighbouring fields in one scope that all moved by the same amount."""
+
+    scope: str
+    delta: int
+    first: str  # leaf names, in old-layout order
+    last: str
+    count: int
+    first_old: int
+    first_new: int
+
+
 @dataclass
 class DiffResult:
     added: Offsets = field(default_factory=dict)
     removed: Offsets = field(default_factory=dict)
     changed: list[Change] = field(default_factory=list)
     renamed: list[Rename] = field(default_factory=list)
+    shifts: list[Shift] = field(default_factory=list)
     unchanged: int = 0
 
     @property
@@ -164,6 +179,34 @@ def _detect_renames(
     return sorted(renames, key=lambda r: (-r.similarity, r.old_key))
 
 
+def _layout_shifts(old: Offsets, new: Offsets, changed: list[Change]) -> list[Shift]:
+    """Find runs of two or more neighbouring fields that moved by the same non-zero amount.
+
+    That is what a struct growing (or shrinking) looks like: everything after the insertion
+    point shifts together. Fields are walked in old-layout order per scope, and an unchanged
+    field breaks a run, so two separate shifts are never merged across it. Methods are left
+    out: RVAs move independently, so a shared delta there would be a coincidence.
+    """
+    delta_of = {c.key: c.delta for c in changed}
+    by_scope: dict[str, list[tuple[int, str]]] = {}
+    for key, value in old.items():
+        if "(" not in key and key in new:
+            by_scope.setdefault(_scope(key), []).append((value, key))
+
+    shifts = []
+    for scope, items in by_scope.items():
+        items.sort()
+        cut = len(scope) + 1 if scope else 0
+        for delta, run in groupby(items, key=lambda item: delta_of.get(item[1], 0)):
+            run = list(run)
+            if delta and len(run) >= 2:
+                first, last = run[0], run[-1]
+                shifts.append(
+                    Shift(scope, delta, first[1][cut:], last[1][cut:], len(run), first[0], new[first[1]])
+                )
+    return sorted(shifts, key=lambda s: (-s.count, s.scope, s.first_old))
+
+
 def _name_similarity(old_key: str, new_key: str) -> float:
     leaf = lambda key: key.partition("(")[0].rsplit(".", 1)[-1].lower()
     return SequenceMatcher(None, leaf(old_key), leaf(new_key)).ratio()
@@ -188,4 +231,5 @@ def diff(old: Offsets, new: Offsets, min_delta: int = 0) -> DiffResult:
             result.removed[key] = old[key]
 
     result.renamed = _detect_renames(old, new, result.added, result.removed)
+    result.shifts = _layout_shifts(old, new, result.changed)
     return result

@@ -19,7 +19,7 @@ Zero dependencies. Python 3.10+.
 ## Usage
 
 ```
-python -m offset_diff OLD NEW [-f text|md|json|html] [-o FILE]
+python -m offset_diff OLD NEW [-f text|md|json|html] [-o FILE] [-g]
                               [-i PAT] [-x PAT] [--min-delta N] [--fail-on-change]
 ```
 
@@ -37,6 +37,7 @@ CHANGED
 
 - `-i` / `-x`: include / exclude keys. Glob patterns, or a plain substring.
 - `--min-delta 0x10`: hide shifts smaller than 16 bytes.
+- `-g` / `--group`: add a layout-shift summary (see below).
 - `--fail-on-change`: exit code 1 if anything differs, for CI and watchers.
 - `-f md`: markdown table, paste it straight into a patch-day issue.
 - `-f html -o report.html`: one self-contained page (no network, light and dark) with a
@@ -57,6 +58,22 @@ Keys look like `Game.Player.health` (field offset) and
 renaming an argument is not a new method. Fields and methods are separate scopes for
 rename detection, because method order shifts between builds far more than field order.
 Parsing runs at roughly 16 MB/s (a 17.5 MB synthetic dump takes about 1 s).
+
+## Layout shifts
+
+When a class grows, every field after the new member moves by the same amount, and a
+200-line CHANGED list hides that. `--group` adds one line per run:
+
+```
+$ python -m offset_diff a.json b.json -g
+LAYOUT SHIFTS (neighbouring fields that moved by the same amount)
+  C_BasePlayer  +0x8  m_iHealth .. m_iArmor  (14 fields, from 0x3E8 -> 0x3F0)
+```
+
+A run is two or more neighbouring fields of one class, in old-layout order, that all moved
+by the same non-zero amount. An unchanged field ends a run, so two separate shifts are
+never merged. Method RVAs are left out because they move independently. It works in every
+`-f` format (`shifts` in JSON); without `-g` the output is unchanged.
 
 ## Rename detection
 
@@ -83,7 +100,8 @@ python -m unittest discover -s tests
 
 ## Roadmap
 
-- [ ] schema-aware mode: group class fields under their class, flag struct-size shifts
+- [x] flag struct-size shifts per class (`--group`)
+- [ ] schema-aware mode: read real struct sizes and field types from the dumper
 - [ ] signature-aware mode: carry a pattern next to each offset, re-scan the new binary
 - [ ] `watch` command: poll a dumper repo, diff on every new commit
 - [x] rename candidates ranked by name similarity

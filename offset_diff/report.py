@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import json
 
-from .diff import DiffResult, Rename
+from .diff import DiffResult, Rename, Shift
 
 
 def _hex(value: int) -> str:
@@ -24,6 +24,14 @@ def _rename_detail(rn: Rename) -> str:
     return f"{where}, name {rn.similarity:.0%}"
 
 
+def _shift_span(sh: Shift) -> str:
+    return f"{sh.first} .. {sh.last}"
+
+
+def _shift_detail(sh: Shift) -> str:
+    return f"{sh.count} fields, from {_hex(sh.first_old)} -> {_hex(sh.first_new)}"
+
+
 def _summary(r: DiffResult) -> str:
     return (
         f"{len(r.changed)} changed, {len(r.added)} added, {len(r.removed)} removed, "
@@ -31,8 +39,17 @@ def _summary(r: DiffResult) -> str:
     )
 
 
-def render_text(r: DiffResult, old_label: str, new_label: str) -> str:
+def render_text(r: DiffResult, old_label: str, new_label: str, group: bool = False) -> str:
     lines = [f"--- {old_label}", f"+++ {new_label}", _summary(r), ""]
+
+    if group and r.shifts:
+        width = max(len(sh.scope) for sh in r.shifts)
+        lines.append("LAYOUT SHIFTS (neighbouring fields that moved by the same amount)")
+        for sh in r.shifts:
+            lines.append(
+                f"  {sh.scope:<{width}}  {_signed(sh.delta)}  {_shift_span(sh)}  ({_shift_detail(sh)})"
+            )
+        lines.append("")
 
     if r.changed:
         width = max(len(c.key) for c in r.changed)
@@ -62,8 +79,16 @@ def render_text(r: DiffResult, old_label: str, new_label: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_markdown(r: DiffResult, old_label: str, new_label: str) -> str:
+def render_markdown(r: DiffResult, old_label: str, new_label: str, group: bool = False) -> str:
     out = [f"# Offset diff", "", f"`{old_label}` -> `{new_label}`", "", _summary(r), ""]
+    if group and r.shifts:
+        out += ["## Layout shifts", "", "| Scope | Shift | Fields | From |", "| --- | --- | --- | --- |"]
+        out += [
+            f"| `{sh.scope}` | `{_signed(sh.delta)}` | `{_shift_span(sh)}` ({sh.count}) "
+            f"| `{_hex(sh.first_old)}` -> `{_hex(sh.first_new)}` |"
+            for sh in r.shifts
+        ]
+        out.append("")
     if r.changed:
         out += ["## Changed", "", "| Key | Old | New | Delta |", "| --- | --- | --- | --- |"]
         out += [
@@ -82,7 +107,7 @@ def render_markdown(r: DiffResult, old_label: str, new_label: str) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def render_json(r: DiffResult, old_label: str, new_label: str) -> str:
+def render_json(r: DiffResult, old_label: str, new_label: str, group: bool = False) -> str:
     payload = {
         "old": old_label,
         "new": new_label,
@@ -105,6 +130,19 @@ def render_json(r: DiffResult, old_label: str, new_label: str) -> str:
         ],
         "unchanged": r.unchanged,
     }
+    if group:
+        payload["shifts"] = [
+            {
+                "scope": sh.scope,
+                "delta": sh.delta,
+                "first": sh.first,
+                "last": sh.last,
+                "count": sh.count,
+                "first_old": sh.first_old,
+                "first_new": sh.first_new,
+            }
+            for sh in r.shifts
+        ]
     return json.dumps(payload, indent=2) + "\n"
 
 
@@ -174,7 +212,7 @@ def _table(title: str, head: list[tuple[str, str]], rows: list[list[tuple[str, s
     return out
 
 
-def render_html(r: DiffResult, old_label: str, new_label: str) -> str:
+def render_html(r: DiffResult, old_label: str, new_label: str, group: bool = False) -> str:
     """Self-contained page: no scripts or styles fetched, a live filter box over every row."""
     esc = html.escape
     out = [
@@ -192,6 +230,21 @@ def render_html(r: DiffResult, old_label: str, new_label: str) -> str:
     ):
         out.append(f'<span class="chip"><b class="{cls}">{count}</b>{name}</span>')
     out += ["</div>", '<input id="q" type="search" placeholder="filter keys" autocomplete="off">']
+
+    if group and r.shifts:
+        out += _table(
+            "Layout shifts",
+            [("Scope", "k"), ("Shift", "v"), ("Fields", "k"), ("From", "v")],
+            [
+                [
+                    (esc(sh.scope), "k"),
+                    (_signed(sh.delta), "v up"),
+                    (esc(f"{_shift_span(sh)} ({sh.count})"), "k"),
+                    (f"{_hex(sh.first_old)} &rarr; {_hex(sh.first_new)}", "v"),
+                ]
+                for sh in r.shifts
+            ],
+        )
 
     if r.changed:
         out += _table(

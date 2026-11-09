@@ -160,6 +160,68 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(set(select(data, [], ["m_i*", "engine"])), {"client.dll.dwViewMatrix"})
 
 
+class ShiftTests(unittest.TestCase):
+    def test_struct_growth_is_one_run(self):
+        old = {"c.a": 0, "c.b": 8, "c.c": 16, "c.d": 24}
+        new = {"c.a": 0, "c.b": 16, "c.c": 24, "c.d": 32}
+        (sh,) = diff(old, new).shifts
+        self.assertEqual((sh.scope, sh.delta, sh.first, sh.last, sh.count), ("c", 8, "b", "d", 3))
+        self.assertEqual((sh.first_old, sh.first_new), (8, 16))
+
+    def test_unchanged_field_breaks_the_run(self):
+        old = {"c.a": 0, "c.b": 8, "c.c": 16, "c.d": 24, "c.e": 32}
+        new = {"c.a": 0, "c.b": 16, "c.c": 16, "c.d": 32, "c.e": 40}
+        (sh,) = diff(old, new).shifts  # b moved alone, d..e moved together
+        self.assertEqual((sh.first, sh.last, sh.count), ("d", "e", 2))
+
+    def test_different_deltas_and_single_fields_are_not_runs(self):
+        self.assertEqual(diff({"c.a": 0, "c.b": 8}, {"c.a": 8, "c.b": 24}).shifts, [])
+        self.assertEqual(diff({"c.a": 0, "c.b": 8}, {"c.a": 0, "c.b": 16}).shifts, [])
+
+    def test_scopes_and_methods(self):
+        old = {"p.a": 0, "p.b": 8, "q.a": 0, "q.b": 8, "p.M1()": 0x100, "p.M2()": 0x200}
+        new = {"p.a": 4, "p.b": 12, "q.a": 0, "q.b": 8, "p.M1()": 0x180, "p.M2()": 0x280}
+        shifts = diff(old, new).shifts
+        self.assertEqual([(s.scope, s.delta) for s in shifts], [("p", 4)])  # q unchanged, RVAs ignored
+
+    def test_ordered_by_size_and_dotted_scopes(self):
+        old = {"n.A.x": 0, "n.A.y": 4, "n.B.x": 0, "n.B.y": 4, "n.B.z": 8}
+        new = {"n.A.x": 8, "n.A.y": 12, "n.B.x": 2, "n.B.y": 6, "n.B.z": 10}
+        self.assertEqual([(s.scope, s.count) for s in diff(old, new).shifts], [("n.B", 3), ("n.A", 2)])
+
+    def test_min_delta_hidden_changes_are_not_shifts(self):
+        old = {"c.a": 0, "c.b": 8}
+        self.assertEqual(diff(old, {"c.a": 4, "c.b": 12}, min_delta=0x10).shifts, [])
+
+    def test_only_shown_with_group(self):
+        from offset_diff.report import RENDERERS
+
+        r = diff({"c.a": 0, "c.b": 8, "c.c": 16}, {"c.a": 0, "c.b": 24, "c.c": 32})
+        for fmt, needle in (
+            ("text", "LAYOUT SHIFTS"),
+            ("md", "## Layout shifts"),
+            ("html", "Layout shifts (1)"),
+            ("json", '"shifts"'),
+        ):
+            self.assertNotIn(needle, RENDERERS[fmt](r, "a", "b"), fmt)
+            self.assertIn(needle, RENDERERS[fmt](r, "a", "b", group=True), fmt)
+        text = RENDERERS["text"](r, "a", "b", group=True)
+        self.assertIn("c  +0x10  b .. c  (2 fields, from 0x8 -> 0x18)", text)
+        data = json.loads(RENDERERS["json"](r, "a", "b", group=True))["shifts"]
+        self.assertEqual(data[0]["delta"], 16)
+        self.assertEqual(data[0]["count"], 2)
+
+    def test_cli_group_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, out = (Path(tmp) / n for n in ("a.json", "b.json", "r.txt"))
+            a.write_text('{"c": {"a": 0, "b": 8, "d": 16}}')
+            b.write_text('{"c": {"a": 0, "b": 12, "d": 20}}')
+            self.assertEqual(main([str(a), str(b), "-o", str(out), "-g"]), 0)
+            self.assertIn("LAYOUT SHIFTS", out.read_text(encoding="utf-8"))
+            self.assertEqual(main([str(a), str(b), "-o", str(out)]), 0)
+            self.assertNotIn("LAYOUT SHIFTS", out.read_text(encoding="utf-8"))
+
+
 class HtmlTests(unittest.TestCase):
     def render(self, old, new):
         from offset_diff.report import render_html
