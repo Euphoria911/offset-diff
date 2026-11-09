@@ -160,6 +160,55 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(set(select(data, [], ["m_i*", "engine"])), {"client.dll.dwViewMatrix"})
 
 
+class HtmlTests(unittest.TestCase):
+    def render(self, old, new):
+        from offset_diff.report import render_html
+
+        return render_html(diff(old, new), "old<1>.json", "new&2.json")
+
+    def test_sections_and_values(self):
+        page = self.render(
+            {"c.m_a": 0x10, "c.m_old": 0x18, "c.m_z": 0x20, "c.gone": 0x99, "x.same": 5},
+            {"c.m_a": 0x14, "c.m_new": 0x1C, "c.m_z": 0x24, "c.fresh": 0x77, "x.same": 5},
+        )
+        for needle in ("Changed (2)", "Possible renames (1)", "Added (1)", "Removed (1)"):
+            self.assertIn(needle, page)
+        self.assertIn("+0x4", page)
+        self.assertIn("c.m_old", page)
+        self.assertIn("same position", page)
+        # the renamed pair is not repeated under Added / Removed
+        self.assertEqual(page.count("c.m_new"), 1)
+        self.assertEqual(page.count("c.m_old"), 1)
+        self.assertIn("c.fresh", page)
+        self.assertIn("c.gone", page)
+
+    def test_everything_user_supplied_is_escaped(self):
+        page = self.render({"<script>a": 1}, {"<img src=x onerror=1>": 2})
+        self.assertNotIn("<script>a", page)
+        self.assertNotIn("<img", page)
+        self.assertIn("&lt;script&gt;a", page)
+        self.assertIn("old&lt;1&gt;.json", page)
+        self.assertIn("new&amp;2.json", page)
+
+    def test_standalone_and_empty(self):
+        page = self.render({"a": 1}, {"a": 1})
+        self.assertIn("No differences.", page)
+        self.assertNotIn("http://", page)
+        self.assertNotIn("https://", page)
+        self.assertNotIn("<table>", page)
+        self.assertTrue(page.startswith("<!doctype html>"))
+
+    def test_cli_html_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, out = (Path(tmp) / n for n in ("a.json", "b.json", "r.html"))
+            a.write_text('{"x": 1}')
+            b.write_text('{"x": 2}')
+            self.assertEqual(main([str(a), str(b), "-f", "html", "-o", str(out)]), 0)
+            text = out.read_text(encoding="utf-8")
+            self.assertIn("<td", text)
+            self.assertIn("0x2", text)
+
+
 class CliTests(unittest.TestCase):
     def test_fail_on_change_and_exit_codes(self):
         with tempfile.TemporaryDirectory() as tmp:

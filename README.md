@@ -19,7 +19,7 @@ Zero dependencies. Python 3.10+.
 ## Usage
 
 ```
-python -m offset_diff OLD NEW [-f text|md|json] [-o FILE]
+python -m offset_diff OLD NEW [-f text|md|json|html] [-o FILE]
                               [-i PAT] [-x PAT] [--min-delta N] [--fail-on-change]
 ```
 
@@ -39,6 +39,8 @@ CHANGED
 - `--min-delta 0x10`: hide shifts smaller than 16 bytes.
 - `--fail-on-change`: exit code 1 if anything differs, for CI and watchers.
 - `-f md`: markdown table, paste it straight into a patch-day issue.
+- `-f html -o report.html`: one self-contained page (no network, light and dark) with a
+  live filter box over every row. Attach it to a release or open it locally.
 
 ## Unity / Il2CppDumper
 
@@ -86,7 +88,7 @@ python -m unittest discover -s tests
 - [ ] `watch` command: poll a dumper repo, diff on every new commit
 - [x] rename candidates ranked by name similarity
 - [x] rename detection by position when the value shifted (same slot between stable neighbours)
-- [ ] HTML report
+- [x] HTML report (`-f html`)
 - [x] Il2CppDumper `dump.cs` parser
 - [ ] Dumper-7 (`.usmap` / SDK header) parser
 - [x] `--only fields|methods` for il2cpp dumps
