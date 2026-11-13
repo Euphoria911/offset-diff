@@ -6,6 +6,7 @@ from pathlib import Path
 
 from . import __version__
 from .diff import diff, select
+from .gitsource import load_rev
 from .parse import load
 from .report import RENDERERS
 
@@ -17,6 +18,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("old", help="old dump: .json / .hpp / .cs / .rs file, or dumper output dir")
     p.add_argument("new", help="new dump, same formats")
+    p.add_argument(
+        "--repo", metavar="DIR",
+        help="read OLD and NEW from this git repo as REV:PATH (e.g. HEAD~1:output/offsets.json)",
+    )
+    p.add_argument(
+        "-p", "--path", metavar="PATH",
+        help="with --repo: file or folder to read when OLD / NEW are bare revisions",
+    )
     p.add_argument("-f", "--format", choices=sorted(RENDERERS), default="text")
     p.add_argument("-o", "--output", help="write report to this file instead of stdout")
     p.add_argument(
@@ -48,10 +57,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.path and not args.repo:
+        parser.error("--path needs --repo")
+    if args.repo:
+        read = lambda spec: load_rev(args.repo, spec, args.path)
+    else:
+        read = load
     try:
-        old = select(load(args.old), args.include, args.exclude, args.only)
-        new = select(load(args.new), args.include, args.exclude, args.only)
+        old = select(read(args.old), args.include, args.exclude, args.only)
+        new = select(read(args.new), args.include, args.exclude, args.only)
     except (OSError, ValueError) as exc:
         print(f"offset-diff: {exc}", file=sys.stderr)
         return 2

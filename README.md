@@ -21,6 +21,7 @@ Zero dependencies. Python 3.10+.
 ```
 python -m offset_diff OLD NEW [-f text|md|json|html] [-o FILE] [-g]
                               [-i PAT] [-x PAT] [--min-delta N] [--fail-on-change]
+                              [--repo DIR [-p PATH]]
 ```
 
 ```
@@ -42,6 +43,21 @@ CHANGED
 - `-f md`: markdown table, paste it straight into a patch-day issue.
 - `-f html -o report.html`: one self-contained page (no network, light and dark) with a
   live filter box over every row. Attach it to a release or open it locally.
+
+## Git history
+
+Dumper repos commit their output on every patch. Diff two commits, tags or branches without
+checking anything out:
+
+```
+python -m offset_diff --repo path/to/cs2-dumper HEAD~1:output/offsets.json HEAD:output/offsets.json
+python -m offset_diff --repo path/to/cs2-dumper v1.2:output v1.3:output -g     # a whole folder
+python -m offset_diff --repo path/to/cs2-dumper HEAD~5 HEAD -p output          # bare revisions + --path
+```
+
+OLD and NEW are git's `REV:PATH`. `REV` is anything git resolves: a hash, tag, branch,
+`HEAD~3`. `PATH` is a file or a folder of dumper output, relative to the repo root (`REV:`
+alone is the root). Every other flag works as before. Needs `git` on PATH.
 
 ## Unity / Il2CppDumper
 
@@ -103,6 +119,7 @@ python -m unittest discover -s tests
 - [x] flag struct-size shifts per class (`--group`)
 - [ ] schema-aware mode: read real struct sizes and field types from the dumper
 - [ ] signature-aware mode: carry a pattern next to each offset, re-scan the new binary
+- [x] diff two revisions of a git repo (`--repo`)
 - [ ] `watch` command: poll a dumper repo, diff on every new commit
 - [x] rename candidates ranked by name similarity
 - [x] rename detection by position when the value shifted (same slot between stable neighbours)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from .il2cpp import MARKER as _IL2CPP_MARKER
@@ -101,18 +102,28 @@ def load(path: str | Path) -> Offsets:
     return parse_text(_read(path), path.suffix)
 
 
-def _load_dir(directory: Path) -> Offsets:
-    by_stem: dict[str, dict[str, Path]] = {}
-    for child in sorted(directory.iterdir()):
-        suffix = child.suffix.lower()
-        if child.is_file() and suffix in _DIR_PREFERENCE:
-            by_stem.setdefault(child.stem, {})[suffix] = child
+def parse_named(names: Iterable[str], read: Callable[[str], str], where: str) -> Offsets:
+    """Merge a folder of dumper output: one entry per file stem, JSON preferred over source.
+
+    ``names`` are the file names in the folder and ``read(name)`` returns one file's text;
+    only the preferred variant of each stem is read. ``where`` names the folder in errors.
+    """
+    by_stem: dict[str, dict[str, str]] = {}
+    for name in sorted(names):
+        stem, suffix = Path(name).stem, Path(name).suffix.lower()
+        if suffix in _DIR_PREFERENCE:
+            by_stem.setdefault(stem, {})[suffix] = name
 
     out: Offsets = {}
     for stem, variants in sorted(by_stem.items()):
         chosen = next(variants[s] for s in _DIR_PREFERENCE if s in variants)
-        for key, value in parse_text(_read(chosen), chosen.suffix).items():
+        for key, value in parse_text(read(chosen), Path(chosen).suffix).items():
             out[f"{stem}.{key}"] = value
     if not out:
-        raise ValueError(f"no parseable offset files in {directory}")
+        raise ValueError(f"no parseable offset files in {where}")
     return out
+
+
+def _load_dir(directory: Path) -> Offsets:
+    names = [child.name for child in directory.iterdir() if child.is_file()]
+    return parse_named(names, lambda name: _read(directory / name), str(directory))
