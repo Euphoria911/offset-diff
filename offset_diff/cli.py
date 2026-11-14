@@ -7,6 +7,7 @@ from pathlib import Path
 from . import __version__
 from .diff import diff, select
 from .gitsource import load_rev
+from .options import add_selection_options
 from .parse import load
 from .report import RENDERERS
 
@@ -28,26 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("-f", "--format", choices=sorted(RENDERERS), default="text")
     p.add_argument("-o", "--output", help="write report to this file instead of stdout")
-    p.add_argument(
-        "-i", "--include", action="append", default=[], metavar="PAT",
-        help="only keys matching PAT (glob, or substring if no wildcard); repeatable",
-    )
-    p.add_argument(
-        "-x", "--exclude", action="append", default=[], metavar="PAT",
-        help="drop keys matching PAT; repeatable",
-    )
-    p.add_argument(
-        "--only", choices=("fields", "methods"),
-        help="il2cpp dumps: compare only field offsets or only method RVAs",
-    )
-    p.add_argument(
-        "--min-delta", type=lambda s: int(s, 0), default=0, metavar="N",
-        help="ignore changes smaller than N bytes (accepts 0x..)",
-    )
-    p.add_argument(
-        "-g", "--group", action="store_true",
-        help="add a layout-shift summary: runs of neighbouring fields that moved by the same amount",
-    )
+    add_selection_options(p)
     p.add_argument(
         "--fail-on-change", action="store_true",
         help="exit 1 when the dumps differ (for CI / patch-day watchers)",
@@ -57,6 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "watch":
+        from .watch import watch_main
+
+        return watch_main(argv[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.path and not args.repo:

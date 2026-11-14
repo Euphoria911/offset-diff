@@ -59,6 +59,39 @@ OLD and NEW are git's `REV:PATH`. `REV` is anything git resolves: a hash, tag, b
 `HEAD~3`. `PATH` is a file or a folder of dumper output, relative to the repo root (`REV:`
 alone is the root). Every other flag works as before. Needs `git` on PATH.
 
+## Watching a dumper repo
+
+`watch` follows a local clone of a dumper repo and prints a diff for every new commit that
+moved an offset:
+
+```
+python -m offset_diff watch --repo path/to/cs2-dumper -p output/offsets.json --state last.txt
+```
+
+```
+commit 9f3a1c20  Update 2026-11-14 build 20481337
+--- 4be07d51:output/offsets.json
++++ 9f3a1c20:output/offsets.json
+2 changed, 0 added, 0 removed, 0 renamed?, 410 unchanged
+...
+```
+
+- Each poll runs `git fetch`, then reads every new commit that touched `-p PATH` (oldest
+  first) from the object store and compares it with the dump after the previous commit. The
+  working tree is never touched. `--ref origin/main` follows something other than the upstream, and
+  `--no-fetch` skips the fetch.
+- A commit that touched the file but moved no offset (reformatting, a timestamp) prints nothing.
+  A commit whose dump doesn't parse is skipped with a warning, and the next one is compared
+  with the last good state.
+- The first run starts from now (`--since REV` starts from `REV` instead). `--state FILE`
+  remembers the last commit seen, so a restart resumes where it stopped, and wins over `--since`.
+- `--interval 300` seconds between checks. `--once` checks once and exits with status 1 if any
+  offsets moved, 0 if not, 2 on error: put it in cron or Task Scheduler instead of leaving a
+  loop running.
+- `-f text|md|json`: json is one object per line, with `commit` and `subject` added.
+  `--out-dir DIR` also writes each report to `DIR/<commit>.<ext>`.
+- `-i`, `-x`, `--only`, `--min-delta` and `-g` work as in the main command.
+
 ## Unity / Il2CppDumper
 
 Diff two `dump.cs` files to see how a game update moved class layouts and code.
@@ -120,7 +153,8 @@ python -m unittest discover -s tests
 - [ ] schema-aware mode: read real struct sizes and field types from the dumper
 - [ ] signature-aware mode: carry a pattern next to each offset, re-scan the new binary
 - [x] diff two revisions of a git repo (`--repo`)
-- [ ] `watch` command: poll a dumper repo, diff on every new commit
+- [x] `watch` command: poll a dumper repo, diff on every new commit
+- [ ] `watch --exec CMD` / webhook to notify when offsets move
 - [x] rename candidates ranked by name similarity
 - [x] rename detection by position when the value shifted (same slot between stable neighbours)
 - [x] HTML report (`-f html`)

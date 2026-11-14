@@ -26,6 +26,41 @@ def _git(repo: str, *args: str) -> bytes:
     return proc.stdout
 
 
+def run_git(repo: str, *args: str) -> bytes:
+    """Run ``git -C repo ARGS`` and return stdout; any failure becomes a ``ValueError``."""
+    return _git(repo, *args)
+
+
+def resolve(repo: str, rev: str) -> str:
+    """Full hash of the commit ``rev`` names (``@{u}``, ``origin/main``, a tag, ...)."""
+    if not rev or rev.startswith("-"):
+        raise ValueError(f"invalid revision {rev!r}")
+    try:
+        return _git(repo, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}").decode().strip()
+    except ValueError:
+        raise ValueError(f"cannot resolve revision {rev!r}") from None
+
+
+def path_exists(repo: str, rev: str, path: str) -> bool:
+    try:
+        _git(repo, "cat-file", "-e", f"{rev}:{path.strip('/')}")
+    except ValueError:
+        return False
+    return True
+
+
+def commits_between(repo: str, old: str, new: str, path: str = "") -> list[str]:
+    """Commits in ``old..new`` that touch ``path``, oldest first."""
+    args = ["rev-list", "--reverse", f"{old}..{new}"]
+    if path:
+        args += ["--", path.strip("/")]
+    return _git(repo, *args).decode().split()
+
+
+def subject(repo: str, commit: str) -> str:
+    return _git(repo, "log", "-1", "--format=%s", commit).decode("utf-8", "replace").strip()
+
+
 def _decode(blob: bytes) -> str:
     return blob.decode("utf-8-sig", errors="replace")
 
