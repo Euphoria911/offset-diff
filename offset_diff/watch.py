@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from collections.abc import Callable
@@ -23,6 +24,7 @@ from .options import add_selection_options
 from .parse import Offsets
 from .report import RENDERERS
 
+HOOK_TIMEOUT = 60.0  # seconds a --exec command may run before it is killed
 FORMATS = ("text", "md", "json")
 _EXT = {"text": "txt", "md": "md", "json": "json"}
 
@@ -57,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-f", "--format", choices=FORMATS, default="text")
     p.add_argument("--out-dir", metavar="DIR", help="also write each report to DIR/<commit>.<ext>")
     add_selection_options(p)
+    p.add_argument(
+        "--exec", nargs=argparse.REMAINDER, default=[], metavar="CMD",
+        help="run CMD ARGS... for every update, report on stdin and OFFSET_DIFF_* in the "
+             "environment (must be the last option; no shell is involved)",
+    )
     return p
 
 
@@ -147,6 +154,43 @@ def _fetch(repo: str) -> str | None:
     return None
 
 
+def hook_env(u: Update, path: str, fmt: str) -> dict[str, str]:
+    """What a ``--exec`` command learns about an update. Everything goes through the
+    environment, never the command line, so a commit subject can't inject anything."""
+    r = u.result
+    return {
+        "OFFSET_DIFF_COMMIT": u.commit,
+        "OFFSET_DIFF_BASE": u.base,
+        "OFFSET_DIFF_SUBJECT": u.subject,
+        "OFFSET_DIFF_PATH": path,
+        "OFFSET_DIFF_FORMAT": fmt,
+        "OFFSET_DIFF_CHANGED": str(len(r.changed)),
+        "OFFSET_DIFF_ADDED": str(len(r.added)),
+        "OFFSET_DIFF_REMOVED": str(len(r.removed)),
+        "OFFSET_DIFF_RENAMED": str(len(r.renamed)),
+    }
+
+
+def run_hook(command: list[str], u: Update, path: str, fmt: str, report: str) -> str | None:
+    """Run the ``--exec`` command with the report on stdin; returns a warning on failure.
+
+    The command is an argument list (never a shell string) and a failing or slow one only
+    costs a warning: the watcher keeps going.
+    """
+    env = {**os.environ, **hook_env(u, path, fmt)}
+    try:
+        proc = subprocess.run(
+            command, input=report.encode("utf-8"), env=env, timeout=HOOK_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        return f"--exec command timed out after {HOOK_TIMEOUT:g}s on {u.commit[:8]}"
+    except OSError as exc:
+        return f"--exec command could not start: {exc}"
+    if proc.returncode != 0:
+        return f"--exec command exited with status {proc.returncode} on {u.commit[:8]}"
+    return None
+
+
 def run(args: argparse.Namespace, sleep: Callable[[float], None] = time.sleep) -> int:
     path = args.path.strip("/")
     err = lambda msg: print(f"offset-diff watch: {msg}", file=sys.stderr, flush=True)
@@ -192,6 +236,10 @@ def run(args: argparse.Namespace, sleep: Callable[[float], None] = time.sleep) -
                 if args.out_dir:
                     name = f"{u.commit[:12]}.{_EXT[args.format]}"
                     Path(args.out_dir, name).write_text(text, encoding="utf-8")
+                if args.exec:
+                    problem = run_hook(args.exec, u, path, args.format, text)
+                    if problem:
+                        err(problem)
             last = head
             _write_state(args.state, last)
         if args.once:
@@ -204,6 +252,8 @@ def watch_main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if args.interval <= 0:
         parser.error("--interval must be positive")
+    if "--exec" in argv and not args.exec:
+        parser.error("--exec needs a command")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     try:

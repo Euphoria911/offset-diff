@@ -3,6 +3,7 @@ import io
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -67,9 +68,10 @@ class WatchTests(unittest.TestCase):
         return sha
 
     def watch(self, *extra: str, sleep=None):
-        argv = ["--repo", str(self.watcher), "-p", PATH, "--state", str(self.state), *extra]
+        argv = ["--repo", str(self.watcher), "-p", PATH, "--state", str(self.state)]
         if sleep is None:
             argv.append("--once")
+        argv.extend(extra)  # last, so a trailing --exec keeps everything after it
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = run(build_parser().parse_args(argv), **({"sleep": sleep} if sleep else {}))
@@ -189,6 +191,88 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(calls, [42.0, 42.0])
         self.assertIn("while sleeping", out.getvalue())
 
+    HOOK = (
+        "import json, os, sys\n"
+        "rec = {k: v for k, v in os.environ.items() if k.startswith('OFFSET_DIFF_')}\n"
+        "rec['stdin'] = sys.stdin.buffer.read().decode('utf-8')\n"
+        "with open(sys.argv[1], 'a', encoding='utf-8') as fh:\n"
+        "    fh.write(json.dumps(rec) + '\\n')\n"
+        "sys.exit(int(os.environ.get('HOOK_EXIT', '0')))\n"
+    )
+
+    def hook(self):
+        """(--exec args, function returning what the hook recorded so far)."""
+        script, log = Path(self._tmp) / "hook.py", Path(self._tmp) / "hook.log"
+        script.write_text(self.HOOK, encoding="utf-8")
+
+        def calls():
+            if not log.exists():
+                return []
+            return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+
+        return ["--exec", sys.executable, str(script), str(log)], calls
+
+    def test_exec_runs_once_per_update_with_env_and_report(self):
+        self.watch()
+        args, calls = self.hook()
+        evil = 'x; echo pwned & $(whoami) `id` "q" %PATH%'
+        first = self.push({PATH: offsets(a=1, b=5)}, evil)
+        second = self.push({PATH: offsets(a=1, b=5, d=9)}, "build 3")
+        code, out, err = self.watch(*args)
+        self.assertEqual((code, err), (1, ""))
+        a, b = calls()
+        self.assertEqual((a["OFFSET_DIFF_COMMIT"], b["OFFSET_DIFF_COMMIT"]), (first, second))
+        self.assertEqual(a["OFFSET_DIFF_BASE"], self.first)
+        self.assertEqual(b["OFFSET_DIFF_BASE"], first)
+        self.assertEqual(a["OFFSET_DIFF_SUBJECT"], evil)  # arrives verbatim, as data
+        self.assertEqual((a["OFFSET_DIFF_CHANGED"], a["OFFSET_DIFF_ADDED"]), ("1", "0"))
+        self.assertEqual((b["OFFSET_DIFF_CHANGED"], b["OFFSET_DIFF_ADDED"]), ("0", "1"))
+        self.assertEqual(a["OFFSET_DIFF_PATH"], PATH)
+        self.assertEqual(a["OFFSET_DIFF_FORMAT"], "text")
+        self.assertIn("c.b", a["stdin"])
+        self.assertIn(a["stdin"], out)  # the hook got exactly what was printed
+
+    def test_exec_gets_the_chosen_format_and_is_not_called_without_updates(self):
+        self.watch()
+        args, calls = self.hook()
+        self.assertEqual(self.watch(*args)[0], 0)
+        self.assertEqual(calls(), [])
+        self.push({PATH: offsets(a=1, b=8)}, "build 2")
+        self.watch("-f", "json", *args)
+        (call,) = calls()
+        self.assertEqual(call["OFFSET_DIFF_FORMAT"], "json")
+        self.assertEqual(json.loads(call["stdin"])["changed"][0]["key"], "c.b")
+
+    def test_failing_hook_warns_and_the_watcher_carries_on(self):
+        from unittest import mock
+
+        self.watch()
+        args, calls = self.hook()
+        self.push({PATH: offsets(a=1, b=5)}, "build 2")
+        last = self.push({PATH: offsets(a=1, b=6)}, "build 3")
+        with mock.patch.dict("os.environ", {"HOOK_EXIT": "3"}):
+            code, _, err = self.watch(*args)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(calls()), 2)  # build 3 was still reported after build 2's hook failed
+        self.assertEqual(err.count("exited with status 3"), 2)
+        self.assertEqual(self.state.read_text().strip(), last)
+
+    def test_hook_that_cannot_start_or_hangs_is_only_a_warning(self):
+        from unittest import mock
+
+        self.watch()
+        self.push({PATH: offsets(a=1, b=5)}, "build 2")
+        code, _, err = self.watch("--exec", str(Path(self._tmp) / "no-such-program"))
+        self.assertEqual(code, 1)
+        self.assertIn("could not start", err)
+
+        self.push({PATH: offsets(a=1, b=6)}, "build 3")
+        slow = [sys.executable, "-c", "import time; time.sleep(30)"]
+        with mock.patch("offset_diff.watch.HOOK_TIMEOUT", 0.5):
+            code, _, err = self.watch("--exec", *slow)
+        self.assertEqual(code, 1)
+        self.assertIn("timed out", err)
+
     def test_poll_returns_updates_without_touching_state(self):
         base = resolve(str(self.watcher), "HEAD")
         self.push({PATH: offsets(a=1, b=5)}, "build 2")
@@ -212,7 +296,12 @@ class WatchCliTests(unittest.TestCase):
             self.assertIn("offset-diff watch:", err.getvalue())
 
     def test_required_and_invalid_arguments(self):
-        for argv in (["watch"], ["watch", "--repo", "."], ["watch", "--repo", ".", "-p", "x", "--interval", "0"]):
+        for argv in (
+            ["watch"],
+            ["watch", "--repo", "."],
+            ["watch", "--repo", ".", "-p", "x", "--interval", "0"],
+            ["watch", "--repo", ".", "-p", "x", "--exec"],
+        ):
             with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 main(argv)
 

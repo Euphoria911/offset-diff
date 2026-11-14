@@ -91,6 +91,21 @@ commit 9f3a1c20  Update 2026-11-14 build 20481337
 - `-f text|md|json`: json is one object per line, with `commit` and `subject` added.
   `--out-dir DIR` also writes each report to `DIR/<commit>.<ext>`.
 - `-i`, `-x`, `--only`, `--min-delta` and `-g` work as in the main command.
+- `--exec CMD [ARGS...]` runs a command for every update, with the report on stdin. It must be
+  the **last** option, since everything after it is the command. No shell is involved: the
+  command is an argument list, and what the commit says reaches it only through environment
+  variables, so a hostile commit message can't inject anything.
+
+  | Variable | Value |
+  | --- | --- |
+  | `OFFSET_DIFF_COMMIT`, `OFFSET_DIFF_BASE` | full hashes of the new commit and the one it was compared with |
+  | `OFFSET_DIFF_SUBJECT` | the commit's first line, verbatim |
+  | `OFFSET_DIFF_PATH`, `OFFSET_DIFF_FORMAT` | the watched path, and `text` / `md` / `json` |
+  | `OFFSET_DIFF_CHANGED`, `_ADDED`, `_REMOVED`, `_RENAMED` | counts |
+
+  A command that fails to start, exits non-zero or runs past 60 s only costs a warning; the
+  watcher keeps going. For example, `... --exec python notify.py` where `notify.py` posts
+  `os.environ["OFFSET_DIFF_SUBJECT"]` and the counts to a chat webhook.
 
 ## Unity / Il2CppDumper
 
@@ -154,7 +169,7 @@ python -m unittest discover -s tests
 - [ ] signature-aware mode: carry a pattern next to each offset, re-scan the new binary
 - [x] diff two revisions of a git repo (`--repo`)
 - [x] `watch` command: poll a dumper repo, diff on every new commit
-- [ ] `watch --exec CMD` / webhook to notify when offsets move
+- [x] `watch --exec CMD` to notify when offsets move
 - [x] rename candidates ranked by name similarity
 - [x] rename detection by position when the value shifted (same slot between stable neighbours)
 - [x] HTML report (`-f html`)
