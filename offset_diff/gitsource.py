@@ -57,8 +57,25 @@ def commits_between(repo: str, old: str, new: str, path: str = "") -> list[str]:
     return _git(repo, *args).decode().split()
 
 
+def recent_commits(repo: str, rev: str, path: str = "", count: int = 0) -> list[str]:
+    """Commits reachable from ``rev`` that touch ``path``, newest first. ``count`` caps the
+    list (0 = all of them)."""
+    args = ["rev-list"]
+    if count > 0:
+        args += ["-n", str(count)]
+    args.append(rev)
+    if path:
+        args += ["--", path.strip("/")]
+    return _git(repo, *args).decode().split()
+
+
 def subject(repo: str, commit: str) -> str:
     return _git(repo, "log", "-1", "--format=%s", commit).decode("utf-8", "replace").strip()
+
+
+def commit_date(repo: str, commit: str) -> str:
+    """Committer date as ``YYYY-MM-DD``."""
+    return _git(repo, "log", "-1", "--format=%cs", commit).decode().strip()
 
 
 def _decode(blob: bytes) -> str:

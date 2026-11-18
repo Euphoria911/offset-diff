@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 
 
-def add_selection_options(p: argparse.ArgumentParser) -> None:
-    """Which keys take part in a diff: ``-i``, ``-x``, ``--only``, ``--min-delta``."""
+def add_selection_options(p: argparse.ArgumentParser, group: bool = True) -> None:
+    """Which keys take part in a diff: ``-i``, ``-x``, ``--only``, ``--min-delta``, and ``-g``
+    unless ``group`` is false (commands that don't print layout shifts)."""
     p.add_argument(
         "-i", "--include", action="append", default=[], metavar="PAT",
         help="only keys matching PAT (glob, or substring if no wildcard); repeatable",
@@ -23,7 +24,8 @@ def add_selection_options(p: argparse.ArgumentParser) -> None:
         "--min-delta", type=lambda s: int(s, 0), default=0, metavar="N",
         help="ignore changes smaller than N bytes (accepts 0x..)",
     )
-    p.add_argument(
-        "-g", "--group", action="store_true",
-        help="add a layout-shift summary: runs of neighbouring fields that moved by the same amount",
-    )
+    if group:
+        p.add_argument(
+            "-g", "--group", action="store_true",
+            help="add a layout-shift summary: runs of neighbouring fields that moved by the same amount",
+        )

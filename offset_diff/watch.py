@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _snapshot(repo: str, rev: str, path: str, include, exclude, only) -> Offsets:
+def snapshot(repo: str, rev: str, path: str, include, exclude, only) -> Offsets:
     if not path_exists(repo, rev, path):
         return {}  # the file is new (or gone) at this commit
     return select(load_rev(repo, f"{rev}:{path}"), list(include), list(exclude), only)
@@ -100,7 +100,7 @@ def poll(
         return head, [], warnings
 
     try:
-        prev = _snapshot(repo, last, path, include, exclude, only)
+        prev = snapshot(repo, last, path, include, exclude, only)
     except ValueError as exc:
         warnings.append(f"{last[:8]}: {exc}; treating it as empty")
         prev = {}
@@ -108,7 +108,7 @@ def poll(
     updates: list[Update] = []
     for commit in commits_between(repo, last, head, path):
         try:
-            data = _snapshot(repo, commit, path, include, exclude, only)
+            data = snapshot(repo, commit, path, include, exclude, only)
         except ValueError as exc:
             warnings.append(f"{commit[:8]}: skipped, {exc}")
             continue

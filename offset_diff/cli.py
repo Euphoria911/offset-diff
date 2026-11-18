@@ -44,6 +44,10 @@ def main(argv: list[str] | None = None) -> int:
         from .watch import watch_main
 
         return watch_main(argv[1:])
+    if argv and argv[0] == "history":
+        from .history import history_main
+
+        return history_main(argv[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.path and not args.repo:

@@ -108,6 +108,33 @@ commit 9f3a1c20  Update 2026-11-14 build 20481337
   watcher keeps going. For example, `... --exec python notify.py` where `notify.py` posts
   `os.environ["OFFSET_DIFF_SUBJECT"]` and the counts to a chat webhook.
 
+## History of one offset
+
+`history` answers "when did this move, and by how much?" It walks the commits that touched a
+file or folder in a dumper repo, newest first like `git log`, and prints what each one changed
+compared with the commit before it:
+
+```
+$ python -m offset_diff history --repo path/to/cs2-dumper -p output/offsets.json -n 12 -i dwViewMatrix
+6fe30c6d  2026-11-12  Game update (14197)
+    ~ client.dll.dwViewMatrix  0x2570250 -> 0x2559640  (-0x16C10)
+
+32d471a6  2026-11-09  Game update (14196)
+    ~ client.dll.dwViewMatrix  0x256F1D0 -> 0x2570250  (+0x1080)
+...
+```
+
+- `-n N` looks at the last N commits that touched `-p PATH` (default 20, `0` is all of them).
+  When that reaches the first commit ever, it shows what that commit introduced; otherwise the
+  oldest commit in range is only the baseline the next one is compared with.
+- Commits that touched the file but moved none of the selected offsets (reformatting, other
+  keys) are left out, so `-i dwViewMatrix` is a timeline of that one offset. `-i`, `-x`,
+  `--only` and `--min-delta` work as in the main command; `--ref` starts somewhere other than `HEAD`.
+- A commit whose dump doesn't parse is skipped with a warning, and the next one is compared
+  with the last good state. `-f json` prints one object per commit.
+- Each commit's dump is read straight from git, never checked out. On a partial clone
+  (`--filter=blob:none`) every blob is fetched on demand, so it is slower there.
+
 ## Unity / Il2CppDumper
 
 Diff two `dump.cs` files to see how a game update moved class layouts and code.
@@ -199,6 +226,7 @@ python -m unittest discover -s tests
 - [ ] schema-aware mode: read real struct sizes and field types from the dumper
 - [ ] signature-aware mode: carry a pattern next to each offset, re-scan the new binary
 - [x] diff two revisions of a git repo (`--repo`)
+- [x] `history`: follow one offset (or the whole dump) across the commits of a dumper repo
 - [x] `watch` command: poll a dumper repo, diff on every new commit
 - [x] `watch --exec CMD` to notify when offsets move
 - [x] rename candidates ranked by name similarity
