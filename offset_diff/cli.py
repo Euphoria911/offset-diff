@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="offset-diff",
         description="Diff offset dumps (cs2-dumper, a2x, Dumper-7 style) across game builds.",
     )
-    p.add_argument("old", help="old dump: .json / .hpp / .cs / .rs file, or dumper output dir")
+    p.add_argument("old", help="old dump: .json / .hpp / .cs / .rs / .inl file, or dumper output dir")
     p.add_argument("new", help="new dump, same formats")
     p.add_argument(
         "--repo", metavar="DIR",

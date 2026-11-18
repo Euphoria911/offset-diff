@@ -14,6 +14,7 @@ Zero dependencies. Python 3.10+.
 | `.rs` | `pub const NAME: usize = 0x..;` inside `mod` blocks |
 | `.cs` | `public const nint Name = 0x..;` inside classes |
 | `dump.cs` | Il2CppDumper output (detected by `// TypeDefIndex:`): field offsets and method RVAs |
+| `Assertions.inl`, SDK `.hpp` | Dumper-7 (Unreal) layout `static_assert`s: member offsets and struct sizes |
 | directory | dumper output folder; one entry per file stem, JSON preferred over source |
 
 ## Usage
@@ -139,11 +140,41 @@ by the same non-zero amount. An unchanged field ends a run, so two separate shif
 never merged. Method RVAs are left out because they move independently. It works in every
 `-f` format (`shifts` in JSON); without `-g` the output is unchanged.
 
+## Unreal / Dumper-7
+
+Diff two Dumper-7 SDKs to see how an Unreal game update moved its classes. Point it at the
+`Assertions.inl` Dumper-7 writes (or at the SDK folder):
+
+```
+python -m offset_diff build_a/CppSDK/Assertions.inl build_b/CppSDK/Assertions.inl -g
+python -m offset_diff build_a/CppSDK build_b/CppSDK -i AActor
+```
+
+Dumper-7 records what it measured as `static_assert(offsetof(UObject, Class) == 0x000010, ...)`
+and `static_assert(sizeof(UObject) == 0x000028, ...)`. Those become keys like
+`UObject.Class` (member offset) and `UObject.sizeof` (struct size), so everything else works
+as usual: `-g` turns "the class grew" into one line (the size itself is not counted as a
+member), renames are found by position, `-i`/`-x` and `-f html` apply. `alignof` lines are
+skipped. Both the default macro form (`#define DUMPER7_ASSERTS_<Class> \`) and inline
+assertions are read, and `namespace Offsets { GObjects, ProcessEvent, ... }` in `Basic.hpp`
+comes along as `Offsets.GObjects`.
+
+- Keys name their class and not the file it sits in, so a class moving between `Engine_classes.hpp`
+  and another file between builds is not reported as removed and added.
+- The format was taken from Dumper-7's generator source (`CppGenerator.cpp`), not from a
+  real game's SDK: I had none to run it on. A large synthetic file in the same format (33 MB,
+  270,000 keys) parses in about a second, and a 284,000-key diff with 6,000 changed classes
+  takes about one second.
+- Not covered: the `.usmap` mappings file and Dumper-7's Dumpspace JSON output.
+
 ## Rename detection
 
 A removed key and an added key are paired as a possible rename in two ways, strongest first:
 
-1. **same value**: both sides share a unique non-zero value.
+1. **same value**: both sides share a unique non-zero value. Within one class or module that
+   is enough; across two different ones the leaf names must also be alike (60%+), since small
+   offsets repeat all over a struct dump. `UFoo.Health -> UBar.Health` (a renamed class) still
+   matches, `UWidget.OldName -> UNewThing.Value` (two unrelated members at `0x30`) does not.
 2. **same position**: the value moved, but the key sits in the same slot between neighbours
    that exist in both dumps (same scope, same relative order). One key gone and one
    key new in a slot is a rename. A slot at the edge of a scope also needs similar names,
@@ -174,7 +205,8 @@ python -m unittest discover -s tests
 - [x] rename detection by position when the value shifted (same slot between stable neighbours)
 - [x] HTML report (`-f html`)
 - [x] Il2CppDumper `dump.cs` parser
-- [ ] Dumper-7 (`.usmap` / SDK header) parser
+- [x] Dumper-7 SDK parser (`Assertions.inl` / header `static_assert`s)
+- [ ] Dumper-7 `.usmap` mappings and Dumpspace JSON
 - [x] `--only fields|methods` for il2cpp dumps
 - [ ] PyPI release
 

@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from fnmatch import fnmatchcase
 from itertools import groupby
 
+from .dumper7 import SIZEOF_LEAF
 from .parse import Offsets
 
 
@@ -208,8 +209,9 @@ def _layout_shifts(old: Offsets, new: Offsets, changed: list[Change]) -> list[Sh
     delta_of = {c.key: c.delta for c in changed}
     by_scope: dict[str, list[tuple[int, str]]] = {}
     for key, value in old.items():
-        if "(" not in key and key in new:
-            by_scope.setdefault(_scope(key), []).append((value, key))
+        if "(" in key or key not in new or key.endswith(f".{SIZEOF_LEAF}"):
+            continue  # a struct's total size is a measurement, not a field with a position
+        by_scope.setdefault(_scope(key), []).append((value, key))
 
     shifts = []
     for scope, items in by_scope.items():

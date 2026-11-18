@@ -6,6 +6,8 @@ Supported inputs:
     qualified by the enclosing namespace / mod / class / struct names.
   * Il2CppDumper ``dump.cs`` - field offsets and method RVAs (detected by its
     ``// TypeDefIndex:`` markers, see il2cpp.py).
+  * Dumper-7 (Unreal) ``Assertions.inl`` or SDK headers - struct sizes and member offsets
+    read from its ``static_assert`` lines (see dumper7.py).
   * A directory of dumper output (one entry per file stem, json preferred).
 """
 
@@ -16,6 +18,7 @@ import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from .dumper7 import is_dumper7, parse_dumper7
 from .il2cpp import MARKER as _IL2CPP_MARKER
 from .il2cpp import parse_il2cpp
 
@@ -36,8 +39,9 @@ _TOKEN_RE = re.compile(
     re.VERBOSE,
 )
 
-SOURCE_SUFFIXES = {".hpp", ".h", ".cs", ".rs", ".txt"}
-_DIR_PREFERENCE = (".json", ".hpp", ".h", ".cs", ".rs")
+SOURCE_SUFFIXES = {".hpp", ".h", ".cs", ".rs", ".txt", ".inl"}
+_DIR_PREFERENCE = (".json", ".hpp", ".h", ".cs", ".rs", ".inl")
+_CONST_RE = re.compile(r"\bconst(?:expr)?\b")
 
 
 def _flatten(node: object, prefix: str, out: Offsets) -> None:
@@ -87,6 +91,11 @@ def parse_text(text: str, hint: str = "") -> Offsets:
         return parse_json(text)
     if _IL2CPP_MARKER in text:
         return parse_il2cpp(text)
+    if is_dumper7(text):
+        out = parse_dumper7(text)
+        if _CONST_RE.search(text):  # e.g. Basic.hpp, which also holds `namespace Offsets { ... }`
+            out = {**parse_source(text), **out}
+        return out
     return parse_source(text)
 
 
@@ -117,8 +126,12 @@ def parse_named(names: Iterable[str], read: Callable[[str], str], where: str) ->
     out: Offsets = {}
     for stem, variants in sorted(by_stem.items()):
         chosen = next(variants[s] for s in _DIR_PREFERENCE if s in variants)
-        for key, value in parse_text(read(chosen), Path(chosen).suffix).items():
-            out[f"{stem}.{key}"] = value
+        text = read(chosen)
+        # Dumper-7 keys already name their class, and a class can move between SDK files
+        # from one build to the next, so they are not prefixed with the file they sit in
+        prefix = "" if is_dumper7(text) else f"{stem}."
+        for key, value in parse_text(text, Path(chosen).suffix).items():
+            out[f"{prefix}{key}"] = value
     if not out:
         raise ValueError(f"no parseable offset files in {where}")
     return out
