@@ -101,6 +101,21 @@ class DiffTests(unittest.TestCase):
         r = diff({"p": 0x50, "q": 0x50}, {"n": 0x50})
         self.assertEqual(r.renamed, [])
 
+    def test_value_match_across_scopes_needs_similar_names(self):
+        # two unrelated classes that merely have a member at the same offset
+        self.assertEqual(diff({"UWidget.OldName": 0x30}, {"UNewThing.Value": 0x30}).renamed, [])
+
+    def test_a_renamed_class_is_still_caught_across_scopes(self):
+        r = diff({"UFoo.Health": 0x30, "UFoo.Armor": 0x34}, {"UBar.Health": 0x30, "UBar.Armor": 0x34})
+        self.assertEqual(
+            {(x.old_key, x.new_key, x.reason) for x in r.renamed},
+            {("UFoo.Health", "UBar.Health", "value"), ("UFoo.Armor", "UBar.Armor", "value")},
+        )
+
+    def test_value_match_inside_one_scope_does_not_need_similar_names(self):
+        r = diff({"c.m_old": 0x30}, {"c.zzzzzz": 0x30})
+        self.assertEqual([(x.old_key, x.new_key) for x in r.renamed], [("c.m_old", "c.zzzzzz")])
+
     def test_rename_similarity_ranks_results(self):
         r = diff(
             {"m.dwEntityList": 0x10, "m.dwFoo": 0x20},

@@ -105,7 +105,13 @@ def _scope(key: str) -> str:
 
 
 def _renames_by_value(added: Offsets, removed: Offsets) -> list[Rename]:
-    """Pair a removed key with an added key when they share a unique non-zero value."""
+    """Pair a removed key with an added key when they share a unique non-zero value.
+
+    Across two different scopes (classes, modules) a shared value alone proves little, since
+    small offsets repeat all over a struct dump: the leaf names must also be alike. That still
+    catches a renamed class (``UFoo.Health`` -> ``UBar.Health``) without pairing unrelated
+    members that merely sit at the same offset.
+    """
     added_counts = Counter(added.values())
     removed_counts = Counter(removed.values())
     by_value = {v: k for k, v in added.items()}
@@ -113,9 +119,9 @@ def _renames_by_value(added: Offsets, removed: Offsets) -> list[Rename]:
     for old_key, value in removed.items():
         if value and added_counts[value] == 1 and removed_counts[value] == 1:
             new_key = by_value[value]
-            renames.append(
-                Rename(old_key, new_key, value, value, _name_similarity(old_key, new_key), "value")
-            )
+            similarity = _name_similarity(old_key, new_key)
+            if _scope(old_key) == _scope(new_key) or similarity >= EDGE_MIN_SIMILARITY:
+                renames.append(Rename(old_key, new_key, value, value, similarity, "value"))
     return renames
 
 
