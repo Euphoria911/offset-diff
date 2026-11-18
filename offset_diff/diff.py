@@ -119,6 +119,16 @@ def _renames_by_value(added: Offsets, removed: Offsets) -> list[Rename]:
     return renames
 
 
+def _group_by_scope(offsets: Offsets, scopes: set[str]) -> dict[str, list[tuple[int, str]]]:
+    """``{scope: [(value, key), ...]}`` for just the given scopes, in a single pass."""
+    grouped: dict[str, list[tuple[int, str]]] = {scope: [] for scope in scopes}
+    for key, value in offsets.items():
+        bucket = grouped.get(_scope(key))
+        if bucket is not None:
+            bucket.append((value, key))
+    return grouped
+
+
 def _gaps(items: list[tuple[int, str]], common: set[str], pool: Offsets, anchors: int) -> list[list[str]]:
     """Split a scope's value-ordered keys into gaps separated by keys present in both dumps."""
     gaps: list[list[str]] = [[] for _ in range(anchors + 1)]
@@ -142,10 +152,12 @@ def _renames_by_position(
     """
     common = old.keys() & new.keys()
     scopes = {_scope(k) for k in removed} & {_scope(k) for k in added}
+    old_by_scope = _group_by_scope(old, scopes)  # one pass, not one pass per scope: a struct
+    new_by_scope = _group_by_scope(new, scopes)  # dump has tens of thousands of scopes
     renames = []
     for scope in sorted(scopes):
-        old_items = sorted((v, k) for k, v in old.items() if _scope(k) == scope)
-        new_items = sorted((v, k) for k, v in new.items() if _scope(k) == scope)
+        old_items = sorted(old_by_scope[scope])
+        new_items = sorted(new_by_scope[scope])
         old_anchors = [k for _, k in old_items if k in common]
         if old_anchors != [k for _, k in new_items if k in common]:
             continue

@@ -151,6 +151,27 @@ class DiffTests(unittest.TestCase):
         r = diff(old, new)
         self.assertEqual([(x.old_key, x.new_key) for x in r.renamed], [("p.old", "p.new")])
 
+    def test_position_detection_does_not_rescan_everything_per_scope(self):
+        # 400 classes, 200 of them with one renamed member: work must grow with the number of
+        # keys, not with keys x changed scopes (that was ~hours on a real Unreal SDK)
+        from unittest import mock
+
+        from offset_diff import diff as diff_module
+
+        old, new = {}, {}
+        for i in range(400):
+            for j in range(6):
+                old[f"C{i}.m{j}"] = new[f"C{i}.m{j}"] = 8 * j
+            if i < 200:
+                del new[f"C{i}.m3"]
+                new[f"C{i}.renamed"] = 8 * 3 + 4
+        calls = []
+        real = diff_module._scope
+        with mock.patch.object(diff_module, "_scope", lambda k: calls.append(1) or real(k)):
+            result = diff(old, new)
+        self.assertEqual(len(result.renamed), 200)
+        self.assertLess(len(calls), 30 * len(old))  # the quadratic version made ~200 x 2 x 2400
+
     def test_zero_is_not_a_rename(self):
         self.assertEqual(diff({"a": 0}, {"b": 0}).renamed, [])
 
